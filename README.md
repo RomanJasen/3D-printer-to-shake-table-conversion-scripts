@@ -10,9 +10,9 @@ by **RomanJasen**\*
 
 ![Making a synthetic earthquake record](docs/gui_earthquake.png)
 
-- **Earthquake-like records:** a standard stochastic model (Kanai-Tajimi filtered noise with a
-  build-up / strong / decay envelope). You choose the length, peak acceleration and the
-  velocity/displacement limits.
+- **Earthquake-like records,** defined either by **peak values** (peak acceleration, plus limits on
+  velocity and displacement; a stochastic Kanai-Tajimi model) or by a **target response spectrum**
+  (Eurocode 8, ASCE 7, or your own spectrum file; the record is matched to it).
 - **Harmonic records:** sines, frequency sweeps and amplitude sweeps. The amplitude is defined in
   displacement, velocity or acceleration.
 - **Real records:** PEER `.AT2/.VT2/.DT2` files and CSV/TXT tables.
@@ -83,9 +83,11 @@ a real record (PEER .AT2, any CSV)  ────┘                        check
 | `sine_2Hz_5mm_20s` | 2 Hz sine, ±5 mm, 20 s: **run this first** | 10 mm | 0.08 g |
 | `gentle_quake` | Synthetic earthquake, 0.05 g, 15 s | 20 mm | 0.05 g |
 | `sweep_1-6Hz_0.03g_60s` | Log sweep 1 → 6 Hz at a constant 0.03 g, 60 s | 13 mm | 0.03 g |
+| `ec8_type1_groundC_0.1g` | Matched to the Eurocode 8 type 1 spectrum, ground C, ag 0.1 g, 20 s | 69 mm | 0.11 g |
 
 Each example has the record (`.csv`, plotted in `.png`) and the G-code (`.gcode`). The
 `_predicted.png` plot shows the predicted bed motion over the record.
+`example_spectrum.csv` shows the format for your own target spectrum.
 
 ## The window (GUI)
 
@@ -93,9 +95,14 @@ The window and the scripts run the same code, so they make the same files.
 
 **Tab 1, Make a record.** Choose the *Type of record* at the top. Units can be typed with the
 value: `0.1g`, `100mm/s`, `4cm`, `none`.
-- **Earthquake-like:** same settings as `synthesize_record.py`. **Generate** draws the record and
-  its response spectrum. With *New random seed each time* off, the seed shown is reused, so you can
-  change one setting and compare.
+- **Earthquake-like:** same settings as `synthesize_record.py`.
+  - *Define the shaking by* switches between **peak values** and a **response spectrum**
+    (Eurocode 8, ASCE 7, or a file). With a spectrum, the plot shows the target as a dashed line
+    and the matched period range shaded.
+  - **Generate** draws the record and its response spectrum. Matching to a spectrum takes about
+    a second.
+  - With *New random seed each time* off, the seed shown is reused, so you can change one setting
+    and compare.
 - **Harmonic / sweep:** same settings as `harmonic_record.py`.
   - Choose whether the amplitude is for displacement, velocity or acceleration.
   - Tick *Sweep the frequency* and/or *Sweep the amplitude* to sweep from the start value to the end
@@ -108,6 +115,8 @@ value: `0.1g`, `100mm/s`, `4cm`, `none`.
   Low-pass to 0 (off), since a sine has nothing to filter; for an earthquake record it sets 15 Hz.
   The log in tab 2 says when it changed this.
 - Each type keeps its own last record, so you can switch back and forth.
+
+![A record matched to the Eurocode 8 spectrum](docs/gui_spectrum.png)
 
 ![A frequency and amplitude sweep](docs/gui_harmonic_sweep.png)
 
@@ -144,6 +153,7 @@ python synthesize_record.py --duration 30 --pga 0.12g --pgv-max 100mm/s --pgd-ma
 | `--f-low`, `--f-high` | Frequency band. 15 Hz is about the highest the bed can follow. | 0.2, 15 Hz |
 | `--rise`, `--strong` | Envelope: build-up time and strong-shaking time; the rest decays | 15 %, 35 % of the duration |
 | `--seed` | Same seed gives the same record. Without it a random seed is used and written in the file. | random |
+| `--spectrum` … | Define the record by a target response spectrum instead; see below | off |
 | `--count` | Several different records (`_01`, `_02`, …) | 1 |
 | `--plot`, `--at2` | Also write a PNG (time histories + 5 % response spectrum) or a PEER `.AT2` file | off |
 
@@ -158,6 +168,54 @@ How a record is made (a standard stochastic ground-motion model):
 5. The record is scaled to the PGA.
 
 The CSV holds `time_s, accel_mm_s2, vel_mm_s, disp_mm`. Its header records the seed, the settings, and the PGA, PGV, PGD, Arias intensity and significant duration.
+
+### Defined by a response spectrum instead of peak values
+
+```bash
+python synthesize_record.py --spectrum ec8 --ag 0.1g --ground C --ec8-type 1 --duration 30 --plot
+python synthesize_record.py --spectrum asce7 --sds 0.4g --sd1 0.15g --periods 0.1 3 --plot
+python synthesize_record.py --spectrum examples/example_spectrum.csv --spectrum-units g --plot
+```
+
+With `--spectrum`, the peak-value settings (`--pga`, `--pgv-max`, `--pgd-max`, `--limit-mode`,
+`--f-dominant`, `--damping`) are not used. The duration, envelope, band, seed and output settings
+work as before.
+
+| Setting | Meaning | Default |
+|---|---|---|
+| `--spectrum` | `ec8`, `asce7`, or a CSV/TXT file with two columns: period (s) and Sa | off (peak values) |
+| `--ag`, `--ground`, `--ec8-type` | Eurocode 8 (EN 1998-1) elastic spectrum: ag = γI·agR on type A ground, ground type A–E, spectrum type 1 or 2 | 0.1g, C, 1 |
+| `--sds`, `--sd1`, `--tl` | ASCE 7 design spectrum (§11.4.6) | none, none, 8 s |
+| `--spectrum-units` | Units of Sa in a spectrum file: `g`, `m/s2`, `cm/s2`, `gal`, `mm/s2` | g |
+| `--periods T_MIN T_MAX` | Period range to match, s | 0.1 2 |
+| `--spectrum-damping` | Damping of the target spectrum, % (EC8 applies its η factor) | 5 |
+| `--iterations` | Matching iterations | 40 |
+
+**How it is matched** (the classic iterative method of SIMQKE, Gasparini & Vanmarcke 1976):
+1. Random phases, the same envelope and band as above, and a flat starting spectrum.
+2. Compute the record's response spectrum.
+3. Scale each frequency's Fourier amplitude by target ÷ record at the matching period, and repeat.
+4. The full processing (band, fade to rest, exact derivatives) runs in every iteration, so the
+   saved record is exactly the matched one.
+
+Typically the record's spectrum is within about ±10 % of the target over the matched range. The
+file header and the plot say how close it came. The PGA comes out close to the spectrum's
+zero-period value (ag·S for EC8).
+
+**Things to know:**
+- **Long periods mean large displacement.** The spectrum at long periods sets the velocity and
+  displacement, and the bed has 210 mm of travel and about 150 mm/s. Matching to 2 s with ag 0.1 g
+  on ground C fits (about 70 mm stroke, 122 mm/s). Longer periods, softer ground or stronger shaking
+  soon outgrow the bed; the bed line in the window shows it. Then shorten `T_MAX`, or scale the
+  record in step 2 (that scales its spectrum too).
+- **Short periods:** `T_MIN` can't be below 1/`--f-high` (0.067 s at 15 Hz), because the record
+  has no content above `--f-high`.
+- **Low cut:** it is lowered automatically to 0.5/`T_MAX` if needed, so the longest period still
+  has content.
+- **Codes and duration:** EC8 asks for at least 10 s of stationary strong motion; with the default
+  envelope (35 % strong) that needs a duration of about 30 s. EC8 also asks for several records
+  (`--count`) whose mean spectrum matches. One record is a good test-table motion, not a full
+  code-compliant set.
 
 ## Step 1, harmonic: sines and sweeps
 

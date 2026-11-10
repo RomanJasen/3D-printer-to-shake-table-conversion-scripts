@@ -171,39 +171,47 @@ class Form:
     def __init__(self, frame):
         self.frame = frame
         self.row = 0
+        self.collect = None  # set to a list to gather the widgets of the next rows (to hide/show them)
         frame.columnconfigure(1, weight=1)
 
+    def _place(self, widget, **grid):
+        widget.grid(row=self.row, **grid)
+        if self.collect is not None:
+            self.collect.append(widget)
+        return widget
+
     def section(self, text):
-        ttk.Label(self.frame, text=text, style="Section.TLabel").grid(
-            row=self.row, column=0, columnspan=3, sticky="w", pady=(12 if self.row else 0, 3))
+        self._place(ttk.Label(self.frame, text=text, style="Section.TLabel"),
+                    column=0, columnspan=3, sticky="w", pady=(12 if self.row else 0, 3))
         self.row += 1
 
     def _hint(self, hint):
         self.last_hint = None
         if hint:
-            self.last_hint = ttk.Label(self.frame, text=hint, style="Hint.TLabel")
-            self.last_hint.grid(row=self.row, column=2, sticky="w", padx=(6, 0))
+            self.last_hint = self._place(ttk.Label(self.frame, text=hint, style="Hint.TLabel"),
+                                         column=2, sticky="w", padx=(6, 0))
+
+    def _label(self, label):
+        self._place(ttk.Label(self.frame, text=label), column=0, sticky="w", padx=(0, 8), pady=2)
 
     def entry(self, label, var, hint="", width=11):
-        ttk.Label(self.frame, text=label).grid(row=self.row, column=0, sticky="w", padx=(0, 8), pady=2)
-        e = ttk.Entry(self.frame, textvariable=var, width=width)
-        e.grid(row=self.row, column=1, sticky="we", pady=2)
+        self._label(label)
+        e = self._place(ttk.Entry(self.frame, textvariable=var, width=width), column=1, sticky="we", pady=2)
         self._hint(hint)
         self.row += 1
         return e
 
     def combo(self, label, var, values, hint="", width=11):
-        ttk.Label(self.frame, text=label).grid(row=self.row, column=0, sticky="w", padx=(0, 8), pady=2)
-        c = ttk.Combobox(self.frame, textvariable=var, values=values, state="readonly", width=width)
-        c.grid(row=self.row, column=1, sticky="we", pady=2)
+        self._label(label)
+        c = self._place(ttk.Combobox(self.frame, textvariable=var, values=values, state="readonly", width=width),
+                        column=1, sticky="we", pady=2)
         self._hint(hint)
         self.row += 1
         return c
 
     def pair(self, label, var_a, var_b, hint=""):
-        ttk.Label(self.frame, text=label).grid(row=self.row, column=0, sticky="w", padx=(0, 8), pady=2)
-        f = ttk.Frame(self.frame)
-        f.grid(row=self.row, column=1, sticky="we", pady=2)
+        self._label(label)
+        f = self._place(ttk.Frame(self.frame), column=1, sticky="we", pady=2)
         ttk.Entry(f, textvariable=var_a, width=5).pack(side="left", fill="x", expand=True)
         ttk.Label(f, text=" to ").pack(side="left")
         ttk.Entry(f, textvariable=var_b, width=5).pack(side="left", fill="x", expand=True)
@@ -211,19 +219,26 @@ class Form:
         self.row += 1
 
     def check(self, text, var, command=None):
-        c = ttk.Checkbutton(self.frame, text=text, variable=var, command=command)
-        c.grid(row=self.row, column=0, columnspan=3, sticky="w", pady=2)
+        c = self._place(ttk.Checkbutton(self.frame, text=text, variable=var, command=command),
+                        column=0, columnspan=3, sticky="w", pady=2)
         self.row += 1
         return c
 
     def file(self, label, var, browse):
-        ttk.Label(self.frame, text=label).grid(row=self.row, column=0, columnspan=3, sticky="w", pady=(2, 0))
+        self._place(ttk.Label(self.frame, text=label), column=0, columnspan=3, sticky="w", pady=(2, 0))
         self.row += 1
-        f = ttk.Frame(self.frame)
-        f.grid(row=self.row, column=0, columnspan=3, sticky="we", pady=(0, 2))
+        f = self._place(ttk.Frame(self.frame), column=0, columnspan=3, sticky="we", pady=(0, 2))
         ttk.Entry(f, textvariable=var).pack(side="left", fill="x", expand=True)
         ttk.Button(f, text="Browse…", command=browse).pack(side="left", padx=(4, 0))
         self.row += 1
+
+
+def show_rows(widgets, visible):
+    for w in widgets:
+        if visible:
+            w.grid()
+        else:
+            w.grid_remove()
 
 
 # --------------------------------------------------------------------------- tab 1: make a record
@@ -233,11 +248,16 @@ class RecordTab(ttk.Frame):
               "--pgd-max": "Displacement limit", "--limit-mode": "Meet the limits by",
               "--f-dominant": "Dominant frequency", "--damping": "Ground damping", "--f-low": "Low cut",
               "--f-high": "High cut", "--rise": "Build-up time", "--strong": "Strong shaking",
-              "--dt": "Sample interval", "--seed": "Seed"}
-    REQUIRED = (("duration", "--duration"), ("pga", "--pga"), ("pgv_max", "--pgv-max"),
-                ("pgd_max", "--pgd-max"), ("f_dominant", "--f-dominant"), ("damping", "--damping"),
-                ("f_low", "--f-low"), ("f_high", "--f-high"), ("dt", "--dt"))
+              "--dt": "Sample interval", "--seed": "Seed", "--spectrum": "Spectrum", "--ag": "ag",
+              "--ground": "Ground type", "--ec8-type": "EC8 type", "--sds": "SDS", "--sd1": "SD1",
+              "--tl": "TL", "--spectrum-units": "Sa units", "--periods": "Match periods",
+              "--spectrum-damping": "Spectrum damping", "--iterations": "Iterations"}
+    REQUIRED = (("duration", "--duration"), ("f_low", "--f-low"), ("f_high", "--f-high"), ("dt", "--dt"))
+    REQUIRED_PEAK = (("pga", "--pga"), ("pgv_max", "--pgv-max"), ("pgd_max", "--pgd-max"),
+                     ("f_dominant", "--f-dominant"), ("damping", "--damping"))
     MODES = ("filter: keep the PGA", "scale: keep the spectrum")
+    DEFINES = ("peak values", "response spectrum")
+    SOURCES = ("Eurocode 8", "ASCE 7", "from a file")
     HLABELS = {"--define": "Amplitude is of", "--amplitude": "Amplitude", "--freq": "Frequency",
                "--duration": "Duration", "--ramp": "Fade in / out", "--dt": "Sample interval",
                "--freq-end": "End frequency", "--freq-law": "Frequency sweep law",
@@ -255,7 +275,14 @@ class RecordTab(ttk.Frame):
         self.vars = {k: tk.StringVar(value=d) for k, d in (
             ("duration", "20"), ("pga", "0.1g"), ("pgv_max", "120mm/s"), ("pgd_max", "60mm"),
             ("f_dominant", "2.5"), ("damping", "0.6"), ("f_low", "0.2"), ("f_high", "15"),
-            ("rise", ""), ("strong", ""), ("dt", "0.005"), ("seed", ""))}
+            ("rise", ""), ("strong", ""), ("dt", "0.005"), ("seed", ""),
+            ("ag", "0.1g"), ("sds", "0.4g"), ("sd1", "0.15g"), ("tl", "8"), ("spec_file", ""),
+            ("t_min", "0.1"), ("t_max", "2"), ("spec_damping", "5"))}
+        self.define = tk.StringVar(value=self.DEFINES[0])
+        self.source = tk.StringVar(value=self.SOURCES[0])
+        self.ground = tk.StringVar(value="C")
+        self.ec8_type = tk.StringVar(value="1")
+        self.spec_units = tk.StringVar(value="g")
         self.mode = tk.StringVar(value=self.MODES[0])
         self.random_seed = tk.BooleanVar(value=True)
         self.save_png = tk.BooleanVar(value=True)
@@ -281,13 +308,34 @@ class RecordTab(ttk.Frame):
         v = self.vars
         f.section("Record")
         f.entry("Duration", v["duration"], "s")
+        f.combo("Define the shaking by", self.define, self.DEFINES, width=18)
+        f.collect = self.peak_rows = []
         f.entry("Peak acceleration", v["pga"], "0.1g, 98gal, 980mm/s2")
         f.entry("Velocity limit", v["pgv_max"], "100mm/s, 10cm/s, none")
         f.entry("Displacement limit", v["pgd_max"], "40mm, 4cm, none")
         f.combo("Meet the limits by", self.mode, self.MODES, width=20)
+        f.collect = self.spec_rows = []
+        f.combo("Spectrum", self.source, self.SOURCES, width=16)
+        f.collect = self.ec8_rows = []
+        f.entry("ag", v["ag"], "= γI·agR, on type A ground")
+        f.combo("Ground type", self.ground, tuple("ABCDE"), "A rock … D soft soil")
+        f.combo("EC8 type", self.ec8_type, ("1", "2"), "1: Ms > 5.5; 2: smaller, near")
+        f.collect = self.asce_rows = []
+        f.entry("SDS", v["sds"], "g, short-period design value")
+        f.entry("SD1", v["sd1"], "g, 1-second design value")
+        f.entry("TL", v["tl"], "s, long-period transition")
+        f.collect = self.file_rows = []
+        f.file("Spectrum file (columns: period in s, Sa)", v["spec_file"], self.browse_spectrum)
+        f.combo("Sa units", self.spec_units, ("g", "m/s2", "cm/s2", "gal", "mm/s2"))
+        f.collect = self.spec_rows
+        f.pair("Match periods", v["t_min"], v["t_max"], "s; the bed limits long periods")
+        f.entry("Spectrum damping", v["spec_damping"], "%")
+        f.collect = None
         f.section("Character of the shaking")
+        f.collect = self.kt_rows = []
         f.entry("Dominant frequency", v["f_dominant"], "Hz, of the ground")
         f.entry("Ground damping", v["damping"], "0.6 is typical")
+        f.collect = None
         f.entry("Low cut", v["f_low"], "Hz, removes slow drift")
         f.entry("High cut", v["f_high"], "Hz, 15 ≈ what the bed follows")
         f.entry("Build-up time", v["rise"], "s, blank = 15 % of duration")
@@ -299,6 +347,9 @@ class RecordTab(ttk.Frame):
         self._seed_state()
         ttk.Label(self.quake_frame, text="For many records at once: synthesize_record.py --count",
                   style="Hint.TLabel").grid(row=f.row, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        self.define.trace_add("write", self.define_changed)
+        self.source.trace_add("write", self.define_changed)
+        self.define_changed()
 
         f = Form(self.common)
         f.section("Save")
@@ -413,17 +464,57 @@ class RecordTab(ttk.Frame):
             raise InputError("Duration: at most 900 s here")
         return args, ramps
 
+    def define_changed(self, *_):
+        """Show the rows for peak values or for the chosen target spectrum."""
+        spectrum = self.define.get() == self.DEFINES[1]
+        source = self.source.get()
+        show_rows(self.peak_rows + self.kt_rows, not spectrum)
+        show_rows(self.spec_rows, spectrum)
+        show_rows(self.ec8_rows, spectrum and source == self.SOURCES[0])
+        show_rows(self.asce_rows, spectrum and source == self.SOURCES[1])
+        show_rows(self.file_rows, spectrum and source == self.SOURCES[2])
+
+    def browse_spectrum(self):
+        path = filedialog.askopenfilename(
+            parent=self, title="Choose a spectrum file (period in s, Sa)", initialdir=HERE,
+            filetypes=[("Spectrum tables", "*.csv *.txt *.dat"), ("All files", "*.*")])
+        if path:
+            self.vars["spec_file"].set(shown(path))
+
     def read_quake(self):
         v = {k: var.get().strip() for k, var in self.vars.items()}
+        spectrum = self.define.get() == self.DEFINES[1]
         argv = []
-        for key, opt in self.REQUIRED:
+        required = list(self.REQUIRED)
+        if spectrum:
+            source = self.source.get()
+            required += [("t_min", "--periods"), ("t_max", "--periods"), ("spec_damping", "--spectrum-damping")]
+            if source == self.SOURCES[0]:
+                required.append(("ag", "--ag"))
+                argv += ["--spectrum=ec8", f"--ground={self.ground.get()}", f"--ec8-type={self.ec8_type.get()}"]
+            elif source == self.SOURCES[1]:
+                required += [("sds", "--sds"), ("sd1", "--sd1"), ("tl", "--tl")]
+                argv.append("--spectrum=asce7")
+            else:
+                if not v["spec_file"]:
+                    raise InputError("Spectrum file: choose a file (Browse…)")
+                path = resolve(v["spec_file"])
+                if not path.is_file():
+                    raise InputError(f"Spectrum file not found: {v['spec_file']}")
+                argv += [f"--spectrum={path}", f"--spectrum-units={self.spec_units.get()}"]
+        else:
+            required += self.REQUIRED_PEAK
+            argv.append("--limit-mode=" + self.mode.get().split(":")[0])
+        for key, opt in required:
             if not v[key]:
                 raise InputError(f"{self.LABELS[opt]}: enter a value")
-            argv.append(f"{opt}={v[key]}")
+            if opt != "--periods":
+                argv.append(f"{opt}={v[key]}")
+        if spectrum:
+            argv += ["--periods", v["t_min"], v["t_max"]]
         for key, opt in (("rise", "--rise"), ("strong", "--strong")):
             if v[key]:
                 argv.append(f"{opt}={v[key]}")
-        argv.append("--limit-mode=" + self.mode.get().split(":")[0])
         p = gui_parser(syn.make_parser)
         args = p.parse_args(argv)
         rise, strong = syn.check_settings(p, args)
@@ -453,14 +544,28 @@ class RecordTab(ttk.Frame):
             messagebox.showerror("Can't make the record", msg, parent=self)
             return False
         self.app.busy_cursor(True)
+        if kind == "quake" and args.spectrum:
+            self.app.status("Matching the record to the spectrum ...")
+            self.update_idletasks()
         try:
             if kind == "quake":
                 self.vars["seed"].set(str(seed))
                 rec = syn.make_record(args, seed, rise, strong)
-                rec.update(type="quake", name=f"quake_{rec['pga'] / G:.2f}g_{args.duration:g}s_seed{seed}",
-                           title=f"Seed {seed}: PGA {rec['pga'] / G:.3f} g, PGV {rec['pgv']:.0f} mm/s, "
-                                 f"PGD {rec['pgd']:.1f} mm")
-                done = f"Made a {args.duration:g} s record with seed {seed}."
+                peaks = f"PGA {rec['pga'] / G:.3f} g, PGV {rec['pgv']:.0f} mm/s, PGD {rec['pgd']:.1f} mm"
+                if args.spectrum:
+                    sp = rec["spectrum"]
+                    tag = {"ec8": f"EC8-{args.ec8_type}{args.ground}_{args.ag / G:.2f}g",
+                           "asce7": "ASCE7"}.get(args.spectrum.lower(), Path(args.spectrum).stem)
+                    name = f"quake_{tag}_{args.duration:g}s_seed{seed}"
+                    title = (f"Seed {seed}, matched to {sp['desc'].split(' (')[0]} "
+                             f"({100 * (sp['min'] - 1):+.0f} to {100 * (sp['max'] - 1):+.0f} %): {peaks}")
+                    done = (f"Made a {args.duration:g} s record matched to the spectrum within "
+                            f"{100 * (sp['min'] - 1):+.0f} to {100 * (sp['max'] - 1):+.0f} %.")
+                else:
+                    name = f"quake_{rec['pga'] / G:.2f}g_{args.duration:g}s_seed{seed}"
+                    title = f"Seed {seed}: {peaks}"
+                    done = f"Made a {args.duration:g} s record with seed {seed}."
+                rec.update(type="quake", name=name, title=title)
             else:
                 rec = hr.make_record(args, *ramps)
                 done = f"Made: {rec['title']}, {rec['t'][-1]:g} s."
@@ -495,9 +600,8 @@ class RecordTab(ttk.Frame):
             ax.tick_params(labelbottom=False)
         axes[2].set_xlabel("time (s)", color=INK_2, fontsize=9)
         sp = fig.add_subplot(gs[:, 1])
-        periods = np.logspace(np.log10(0.05), np.log10(5.0), 80)
-        sp.semilogx(periods, syn.response_spectrum(rec["a"], rec["dt"], periods) / G, color=BLUE, lw=1.6)
-        style_axes(sp, "spectral acceleration, 5 % damping (g)", "period (s)")
+        syn.draw_spectrum(sp, rec["a"], rec["dt"], rec.get("spectrum"), (BLUE, ORANGE))
+        style_axes(sp, sp.get_ylabel(), "period (s)")
         sp.grid(which="minor", color=GRID, lw=0.4)
         fig.suptitle(rec["title"], color=INK, fontsize=10)
         self.plot.canvas.draw_idle()

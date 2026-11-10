@@ -1,4 +1,4 @@
-; Shake-table motion for s1pro-stock, generated 2026-11-10 11:32 by record_to_gcode.py
+; Shake-table motion for s1pro-stock, generated 2026-11-10 11:46 by record_to_gcode.py
 ; Target: gentle_quake.csv (disp column, mm)
 ;
 ; source       : gentle_quake.csv, disp in mm, 3001 samples at dt=0.005 s (no high-pass, low-pass 15 Hz)

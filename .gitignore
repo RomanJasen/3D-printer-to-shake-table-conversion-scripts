@@ -1,0 +1,7 @@
+# Python
+__pycache__/
+*.pyc
+
+# Your own records and G-code (the examples/ folder is part of the project)
+records/
+gcode/
